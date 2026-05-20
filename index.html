@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>진안군 출장 경로 최적화 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #f3f4f6; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-blue-700 text-white shadow-md z-10 flex-shrink-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-route text-2xl"></i>
+                <h1 class="text-xl font-bold tracking-tight">스마트 출장 동선 최적화</h1>
+            </div>
+            <div class="text-sm bg-blue-800 px-3 py-1 rounded-full border border-blue-600">
+                <i class="fa-solid fa-bolt mr-1"></i> 통합 데이터 파일(JSON) 모드
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col lg:flex-row max-w-7xl mx-auto w-full p-4 gap-6 overflow-hidden">
+        
+        <!-- 왼쪽 패널: 파일 업로드 및 전체 장소 목록 -->
+        <section class="flex flex-col w-full lg:w-1/3 gap-4 h-full">
+            
+            <!-- 파일 업로드 영역 -->
+            <div id="dropZone" class="glass-panel rounded-xl shadow-sm p-5 border-2 border-dashed border-gray-300 transition-colors cursor-pointer hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center justify-center relative">
+                <input type="file" id="fileInput" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <i class="fa-solid fa-file-arrow-up text-3xl text-gray-400 mb-2"></i>
+                <p class="text-sm font-semibold text-gray-700 text-center leading-relaxed">
+                    <span class="text-blue-600 font-bold">master_matrix.json</span> 파일을<br>이곳에 드롭하세요
+                </p>
+                <div id="jsonStatus" class="mt-2 flex items-center text-xs font-medium text-gray-400">
+                    <i class="fa-solid fa-circle-xmark mr-1.5"></i> 데이터 대기중
+                </div>
+            </div>
+
+            <!-- 전체 장소 목록 -->
+            <div class="glass-panel rounded-xl shadow-sm border border-gray-200 flex flex-col flex-grow overflow-hidden relative">
+                <div id="listOverlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center text-gray-500">
+                    <i class="fa-solid fa-lock text-3xl mb-2"></i>
+                    <p class="text-sm font-medium">데이터 파일을 업로드해주세요</p>
+                </div>
+
+                <div class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl flex flex-col gap-3">
+                    <div class="flex justify-between items-center">
+                        <h2 class="font-bold text-gray-700"><i class="fa-solid fa-list-ul mr-2"></i>전체 장소 (<span id="totalCount">0</span>)</h2>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <select id="categoryFilter" disabled class="w-1/3 border border-gray-300 rounded-lg text-sm p-2 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer">
+                            <option value="">모든 구분</option>
+                        </select>
+                        <select id="regionFilter" disabled class="w-2/3 border border-gray-300 rounded-lg text-sm p-2 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer">
+                            <option value="">모든 읍/면</option>
+                        </select>
+                    </div>
+
+                    <div class="relative">
+                        <input type="text" id="searchInput" placeholder="장소명 검색 (예: 진안읍, 보건소)" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <i class="fa-solid fa-search absolute left-3 top-2.5 text-gray-400"></i>
+                    </div>
+                </div>
+                
+                <ul id="sourceList" class="flex-grow overflow-y-auto p-2 scrollbar-hide space-y-1 bg-white">
+                    <!-- JS로 동적 생성됨 -->
+                </ul>
+            </div>
+        </section>
+
+        <!-- 오른쪽 패널: 출장 예정지 및 결과 -->
+        <section class="flex flex-col w-full lg:w-2/3 h-full gap-4">
+            
+            <div class="glass-panel rounded-xl shadow-sm border border-gray-200 flex flex-col h-1/2 min-h-[300px]">
+                <div class="p-4 border-b border-gray-200 bg-blue-50 rounded-t-xl flex justify-between items-center">
+                    <div>
+                        <h2 class="font-bold text-blue-900"><i class="fa-solid fa-clipboard-check mr-2"></i>이번 출장 예정지</h2>
+                        <p class="text-xs text-blue-700 mt-1">왼쪽 목록에서 추가 버튼을 누르세요. (첫 번째 장소가 출발/도착지입니다)</p>
+                    </div>
+                    <button id="clearBtn" class="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded hover:bg-red-100 transition border border-red-200 disabled:opacity-50">
+                        <i class="fa-solid fa-trash-can mr-1"></i>전체 초기화
+                    </button>
+                </div>
+                
+                <ul id="targetList" class="flex-grow overflow-y-auto p-4 space-y-2 bg-gray-50/50">
+                    <li id="emptyTargetMsg" class="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
+                        <i class="fa-solid fa-map-location-dot text-4xl mb-3 text-gray-300"></i>
+                        방문할 출장지를 추가해주세요.
+                    </li>
+                </ul>
+
+                <div class="p-4 border-t border-gray-200 bg-white rounded-b-xl flex justify-between items-center">
+                    <div id="rawTotalInfo" class="text-sm font-medium text-gray-500 hidden">
+                        입력 순서 총 거리: <span id="rawTotalVal" class="text-blue-600 font-bold text-base">0km</span>
+                    </div>
+                    <button id="calcBtn" disabled class="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
+                        <i class="fa-solid fa-calculator"></i> 최적 경로 계산
+                    </button>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl shadow-sm border border-gray-200 flex flex-col flex-grow overflow-hidden">
+                <div class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+                    <h2 class="font-bold text-gray-700"><i class="fa-solid fa-flag-checkered mr-2"></i>최단 거리 산출 결과</h2>
+                </div>
+                <div id="resultContent" class="flex-grow overflow-y-auto p-4 bg-white flex flex-col items-center justify-center">
+                    <div class="text-gray-400 text-sm text-center">
+                        <i class="fa-solid fa-wand-magic-sparkles text-3xl mb-2 block text-gray-300"></i>
+                        출장지를 선택하고 계산 버튼을 누르면<br>가장 효율적인 이동 순서가 이곳에 표시됩니다.
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        let matrixData = {};       
+        let locationNames = [];    
+        let selectedIndices = [];  
+        let locationsMeta = {};    
+        let hasJson = false;
+
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const jsonStatus = document.getElementById('jsonStatus');
+        
+        const listOverlay = document.getElementById('listOverlay');
+        const sourceList = document.getElementById('sourceList');
+        const targetList = document.getElementById('targetList');
+        const emptyTargetMsg = document.getElementById('emptyTargetMsg');
+        const totalCountSpan = document.getElementById('totalCount');
+        
+        const searchInput = document.getElementById('searchInput');
+        const categoryFilter = document.getElementById('categoryFilter');
+        const regionFilter = document.getElementById('regionFilter');
+        
+        const calcBtn = document.getElementById('calcBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const resultContent = document.getElementById('resultContent');
+
+        function handleFile(file) {
+            if (!file.name.endsWith('.json')) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    matrixData = JSON.parse(e.target.result);
+                    locationNames = Object.keys(matrixData);
+                    
+                    if (locationNames.length === 0) throw new Error("데이터가 비어있습니다.");
+
+                    const categories = new Set();
+                    const regions = new Set();
+                    locationsMeta = {};
+
+                    // JSON 파싱 (새로운 구조 딕셔너리형 대응)
+                    locationNames.forEach(name => {
+                        const data = matrixData[name];
+                        if (Array.isArray(data)) {
+                            // 구버전(리스트 형태) 매트릭스 처리 로직
+                            locationsMeta[name] = { category: '', region: '' };
+                        } else {
+                            // 신버전(딕셔너리 통합 형태) 매트릭스 처리 로직
+                            locationsMeta[name] = { category: data.category || '', region: data.region || '' };
+                            if (data.category) categories.add(data.category);
+                            if (data.region) regions.add(data.region);
+                        }
+                    });
+
+                    populateDropdown(categoryFilter, categories, '모든 구분');
+                    populateDropdown(regionFilter, regions, '모든 읍/면');
+                    
+                    categoryFilter.disabled = false;
+                    regionFilter.disabled = false;
+
+                    hasJson = true;
+                    jsonStatus.className = 'mt-2 flex items-center text-xs font-bold text-blue-600';
+                    jsonStatus.innerHTML = `<i class="fa-solid fa-check-circle mr-1.5"></i> 데이터 통합 로드 완료 (${locationNames.length}개)`;
+                    
+                    listOverlay.classList.add('hidden');
+                    
+                    selectedIndices = [];
+                    if (locationNames[0] && locationNames[0].includes("군청")) {
+                        selectedIndices.push(0);
+                    }
+                    
+                    renderSourceList();
+                    renderTargetList();
+                } catch (error) {
+                    console.error(error);
+                    alert('JSON 파일을 읽는 중 오류가 발생했습니다. 올바른 형식인지 확인하세요.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function populateDropdown(selectElement, itemsSet, defaultText) {
+            selectElement.innerHTML = `<option value="">${defaultText}</option>`;
+            Array.from(itemsSet).sort().forEach(item => {
+                if(item) {
+                    const option = document.createElement('option');
+                    option.value = item;
+                    option.textContent = item;
+                    selectElement.appendChild(option);
+                }
+            });
+        }
+
+        fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleFile(e.target.files[0]) });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500', 'bg-blue-50'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-blue-500', 'bg-blue-50'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+
+        searchInput.addEventListener('input', renderSourceList);
+        categoryFilter.addEventListener('change', renderSourceList);
+        regionFilter.addEventListener('change', renderSourceList);
+
+        function renderSourceList() {
+            if (!hasJson) return;
+            sourceList.innerHTML = '';
+            
+            const searchVal = searchInput.value.toLowerCase();
+            const catVal = categoryFilter.value;
+            const regVal = regionFilter.value;
+            let visibleCount = 0;
+
+            locationNames.forEach((name, index) => {
+                if (selectedIndices.includes(index)) return;
+                
+                const meta = locationsMeta[name];
+                if (searchVal && !name.toLowerCase().includes(searchVal)) return;
+                if (catVal && meta.category !== catVal) return;
+                if (regVal && meta.region !== regVal) return;
+
+                visibleCount++;
+
+                let badgesHtml = '';
+                if (meta.category) badgesHtml += `<span class="inline-block px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] rounded mr-1">${meta.category}</span>`;
+                if (meta.region) badgesHtml += `<span class="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-500 border border-blue-100 text-[10px] rounded mr-1">${meta.region}</span>`;
+
+                const li = document.createElement('li');
+                li.className = "flex justify-between items-center p-2.5 bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow hover:border-blue-200 transition group cursor-default";
+                li.innerHTML = `
+                    <div class="flex flex-col flex-grow truncate mr-2">
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-location-dot text-gray-300 mr-2 text-xs"></i>
+                            <span class="text-sm font-semibold text-gray-700 truncate">${name}</span>
+                        </div>
+                        <div class="ml-5 mt-1 flex flex-wrap gap-1">
+                            ${badgesHtml}
+                        </div>
+                    </div>
+                    <button onclick="addLocation(${index})" class="text-blue-500 hover:text-white hover:bg-blue-500 w-8 h-8 rounded-full flex items-center justify-center transition border border-transparent hover:border-blue-600 focus:outline-none flex-shrink-0">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                `;
+                sourceList.appendChild(li);
+            });
+            totalCountSpan.textContent = visibleCount;
+        }
+
+        function renderTargetList() {
+            targetList.innerHTML = '';
+            const rawTotalInfo = document.getElementById('rawTotalInfo');
+            const rawTotalVal = document.getElementById('rawTotalVal');
+            
+            if (selectedIndices.length === 0) {
+                targetList.appendChild(emptyTargetMsg);
+                emptyTargetMsg.style.display = 'flex';
+                calcBtn.disabled = true;
+                clearBtn.disabled = true;
+                if (rawTotalInfo) rawTotalInfo.classList.add('hidden');
+            } else {
+                emptyTargetMsg.style.display = 'none';
+                calcBtn.disabled = selectedIndices.length < 2;
+                clearBtn.disabled = false;
+                if (rawTotalInfo) rawTotalInfo.classList.remove('hidden');
+
+                let rawTotal = 0;
+
+                selectedIndices.forEach((locIndex, i) => {
+                    const name = locationNames[locIndex];
+                    const isStart = (i === 0);
+                    
+                    let distHtml = '';
+                    if (!isStart) {
+                        const prevIdx = selectedIndices[i-1];
+                        const dist = getDistance(prevIdx, locIndex);
+                        rawTotal += dist;
+                        distHtml = `<div class="text-xs text-gray-500 mt-1.5 font-medium"><i class="fa-solid fa-arrow-turn-down fa-rotate-270 text-gray-300 mr-1"></i>이전 장소에서 <span class="text-blue-500">${formatDistance(dist)}</span> 소요</div>`;
+                    }
+                    
+                    const li = document.createElement('li');
+                    li.className = `flex justify-between items-center p-3 rounded-lg shadow-sm border ${isStart ? 'bg-blue-100 border-blue-300' : 'bg-white border-gray-200'}`;
+                    li.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${isStart ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}">
+                                ${isStart ? '출발' : i}
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-sm font-semibold ${isStart ? 'text-blue-900' : 'text-gray-800'}">${name}</span>
+                                ${distHtml}
+                            </div>
+                        </div>
+                        <button onclick="removeLocation(${locIndex})" class="text-red-400 hover:text-red-600 p-1 focus:outline-none ${isStart && selectedIndices.length > 1 ? 'invisible' : ''}">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    `;
+                    targetList.appendChild(li);
+                });
+
+                if (selectedIndices.length > 1) {
+                    const returnDist = getDistance(selectedIndices[selectedIndices.length - 1], selectedIndices[0]);
+                    rawTotal += returnDist;
+                    
+                    const returnLi = document.createElement('li');
+                    returnLi.className = "flex justify-center p-2 mt-2 text-xs text-gray-500 bg-transparent border border-dashed border-gray-300 rounded-lg";
+                    returnLi.innerHTML = `<i class="fa-solid fa-rotate-left mr-1.5"></i>출발지(${locationNames[selectedIndices[0]]})로 복귀 (+${formatDistance(returnDist)})`;
+                    targetList.appendChild(returnLi);
+                }
+                if (rawTotalVal) rawTotalVal.innerHTML = formatDistance(rawTotal);
+            }
+        }
+
+        window.addLocation = function(index) {
+            if (!selectedIndices.includes(index)) {
+                selectedIndices.push(index);
+                renderSourceList();
+                renderTargetList();
+            }
+        };
+
+        window.removeLocation = function(index) {
+            selectedIndices = selectedIndices.filter(i => i !== index);
+            renderSourceList();
+            renderTargetList();
+            resetResultView();
+        };
+
+        clearBtn.addEventListener('click', () => {
+            selectedIndices = [];
+            renderSourceList();
+            renderTargetList();
+            resetResultView();
+        });
+
+        function resetResultView() {
+            resultContent.innerHTML = `
+                <div class="text-gray-400 text-sm text-center">
+                    <i class="fa-solid fa-wand-magic-sparkles text-3xl mb-2 block text-gray-300"></i>
+                    출장지를 선택하고 계산 버튼을 누르면<br>가장 효율적인 이동 순서가 이곳에 표시됩니다.
+                </div>
+            `;
+            resultContent.classList.add('items-center', 'justify-center');
+        }
+
+        // 거리 가져오는 로직 (신버전 딕셔너리형 대응)
+        function getDistance(fromIdx, toIdx) {
+            const fromName = locationNames[fromIdx];
+            const data = matrixData[fromName];
+            if (!data) return 999999;
+            
+            // 기존 단순 배열 구조와 새로운 딕셔너리(distances 배열 포함) 구조 모두 호환
+            const distArray = Array.isArray(data) ? data : data.distances;
+            if (!distArray || distArray[toIdx] === undefined) return 999999;
+            return distArray[toIdx];
+        }
+
+        function calculateTotalDistance(routeArray) {
+            let total = 0;
+            for (let i = 0; i < routeArray.length - 1; i++) {
+                total += getDistance(routeArray[i], routeArray[i+1]);
+            }
+            return total;
+        }
+
+        function calculateShortestPath() {
+            if (selectedIndices.length < 2) return;
+
+            calcBtn.disabled = true;
+            calcBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 계산 중...';
+
+            setTimeout(() => {
+                const nodes = [...selectedIndices];
+                const startNode = nodes[0];
+                
+                let unvisited = nodes.slice(1);
+                let currentRoute = [startNode];
+                let current_node = startNode;
+
+                while (unvisited.length > 0) {
+                    let nearest_idx = 0;
+                    let min_dist = Infinity;
+
+                    for (let i = 0; i < unvisited.length; i++) {
+                        const dist = getDistance(current_node, unvisited[i]);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            nearest_idx = i;
+                        }
+                    }
+
+                    current_node = unvisited[nearest_idx];
+                    currentRoute.push(current_node);
+                    unvisited.splice(nearest_idx, 1);
+                }
+                
+                currentRoute.push(startNode);
+
+                let improved = true;
+                let bestRoute = [...currentRoute];
+                let bestDistance = calculateTotalDistance(bestRoute);
+
+                while (improved) {
+                    improved = false;
+                    for (let i = 1; i < bestRoute.length - 2; i++) {
+                        for (let k = i + 1; k < bestRoute.length - 1; k++) {
+                            const newRoute = [
+                                ...bestRoute.slice(0, i),
+                                ...bestRoute.slice(i, k + 1).reverse(),
+                                ...bestRoute.slice(k + 1)
+                            ];
+                            
+                            const newDistance = calculateTotalDistance(newRoute);
+                            if (newDistance < bestDistance) {
+                                bestRoute = newRoute;
+                                bestDistance = newDistance;
+                                improved = true;
+                            }
+                        }
+                    }
+                }
+
+                displayResult(bestRoute, bestDistance);
+
+                calcBtn.disabled = false;
+                calcBtn.innerHTML = '<i class="fa-solid fa-calculator"></i> 최적 경로 계산';
+            }, 100);
+        }
+
+        calcBtn.addEventListener('click', calculateShortestPath);
+
+        function formatDistance(meters) {
+            if (meters >= 999999) return "<span class='text-red-500'>경로 탐색 불가</span>";
+            if (meters < 1000) return `${meters}m`;
+            return `${(meters / 1000).toFixed(1)}km`;
+        }
+
+        function displayResult(route, totalDist) {
+            resultContent.classList.remove('items-center', 'justify-center');
+            resultContent.innerHTML = '';
+
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = "w-full bg-blue-600 text-white p-4 rounded-xl shadow-md mb-6 flex justify-between items-center";
+            summaryDiv.innerHTML = `
+                <div>
+                    <p class="text-blue-100 text-sm mb-1">예상 총 이동 거리</p>
+                    <p class="text-3xl font-bold">${formatDistance(totalDist)}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-blue-100 text-sm mb-1">총 방문 지점</p>
+                    <p class="text-xl font-bold">${route.length - 1}곳</p>
+                </div>
+            `;
+            resultContent.appendChild(summaryDiv);
+
+            const timelineDiv = document.createElement('div');
+            timelineDiv.className = "w-full px-2";
+            
+            let html = '<div class="relative border-l-2 border-blue-200 ml-4 space-y-6 pb-4">';
+            
+            for (let i = 0; i < route.length; i++) {
+                const nodeIdx = route[i];
+                const locName = locationNames[nodeIdx];
+                const meta = locationsMeta[locName] || { category: '', region: '' };
+                const isFirst = (i === 0);
+                const isLast = (i === route.length - 1);
+                
+                let badgesHtml = '';
+                if (meta.category) badgesHtml += `<span class="inline-block px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] rounded mr-1">${meta.category}</span>`;
+                if (meta.region) badgesHtml += `<span class="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-500 border border-blue-100 text-[10px] rounded mr-1">${meta.region}</span>`;
+
+                let distHtml = '';
+                if (!isLast) {
+                    const nextNodeIdx = route[i+1];
+                    const dist = getDistance(nodeIdx, nextNodeIdx);
+                    distHtml = `
+                        <div class="absolute left-[-1.1rem] top-10 flex flex-col items-center">
+                            <div class="h-10 border-l-2 border-dashed border-gray-300"></div>
+                            <span class="text-xs font-semibold text-gray-500 bg-white px-1 py-0.5 rounded border border-gray-200 mt-1 z-10 whitespace-nowrap shadow-sm">
+                                <i class="fa-solid fa-car-side mr-1"></i> ${formatDistance(dist)}
+                            </span>
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <div class="relative pl-6 ${isFirst || isLast ? 'mt-2' : ''}">
+                        <div class="absolute w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold -left-[0.8rem] ring-4 ring-white ${isFirst || isLast ? 'bg-blue-600 shadow-md' : 'bg-green-500'}">
+                            ${isFirst ? '<i class="fa-solid fa-play text-[10px]"></i>' : (isLast ? '<i class="fa-solid fa-flag-checkered text-[10px]"></i>' : i)}
+                        </div>
+                        
+                        <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center ${isFirst || isLast ? 'ring-1 ring-blue-500/20 bg-blue-50/30' : ''}">
+                            <div>
+                                <span class="text-xs font-bold text-gray-400 mb-1 block">${isFirst ? '출발' : (isLast ? '최종 복귀' : `방문 ${i}순위`)}</span>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-base font-bold text-gray-800">${locName}</h3>
+                                    ${!isFirst && !isLast ? `<div class="mt-0.5">${badgesHtml}</div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        ${distHtml}
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            timelineDiv.innerHTML = html;
+            resultContent.appendChild(timelineDiv);
+        }
+    </script>
+</body>
+</html>
