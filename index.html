@@ -154,7 +154,7 @@
         const availableServerFiles = [
             "example_matrix_1.json",
             "example_matrix_2.json"
-            // "진안군_메트릭스.json" 과 같이 파일명을 추가/수정 하시면 됩니다.
+            // 파일명 추가/수정
         ];
 
         // 상태 변수
@@ -288,10 +288,7 @@
             listOverlay.classList.add('hidden');
             
             selectedIndices = [];
-            // 기본값 설정: '군청'이라는 단어가 포함된 장소를 시작점으로
-            if (locationNames[0] && locationNames[0].includes("군청")) {
-                selectedIndices.push(0);
-            }
+            
             
             renderSourceList();
             renderTargetList();
