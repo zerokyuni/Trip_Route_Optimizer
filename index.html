@@ -23,7 +23,7 @@
                 <h1 class="text-xl font-bold tracking-tight">출장 동선 최적화 시스템 by Kyun</h1>
             </div>
             <div class="text-sm bg-blue-800 px-3 py-1 rounded-full border border-blue-600">
-                <i class="fa-solid fa-bolt mr-1"></i> NN + 2Opt
+                <i class="fa-solid fa-bolt mr-1"></i> NN+2Opt
             </div>
         </div>
     </header>
@@ -33,14 +33,37 @@
         <!-- 왼쪽 패널: 파일 업로드 및 전체 장소 목록 -->
         <section class="flex flex-col w-full lg:w-1/3 gap-4 h-full">
             
-            <!-- 파일 업로드 영역 -->
-            <div id="dropZone" class="glass-panel rounded-xl shadow-sm p-5 border-2 border-dashed border-gray-300 transition-colors cursor-pointer hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center justify-center relative">
-                <input type="file" id="fileInput" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                <i class="fa-solid fa-file-arrow-up text-3xl text-gray-400 mb-2"></i>
-                <p class="text-sm font-semibold text-gray-700 text-center leading-relaxed">
-                    <span class="text-blue-600 font-bold">거리 메트릭스(json)</span> 파일을<br>이곳에 드롭하세요
-                </p>
-                <div id="jsonStatus" class="mt-2 flex items-center text-xs font-medium text-gray-400">
+            <!-- 파일 데이터 로드 영역 (수정됨) -->
+            <div class="glass-panel rounded-xl shadow-sm border border-gray-200 bg-white flex flex-col p-4 gap-3">
+                
+                <!-- 1. 서버 폴더의 파일 불러오기 (드롭박스) -->
+                <div>
+                    <label for="serverFileSelect" class="block text-sm font-bold text-gray-700 mb-2">
+                        <i class="fa-solid fa-cloud-arrow-down mr-1 text-blue-600"></i> 서버 데이터 불러오기
+                    </label>
+                    <select id="serverFileSelect" class="w-full border border-gray-300 rounded-lg text-sm p-2.5 focus:ring-2 focus:ring-blue-500 cursor-pointer bg-gray-50 outline-none">
+                        <option value="">-- 거리 매트릭스 선택 --</option>
+                        <!-- JS에서 동적으로 채워집니다 -->
+                    </select>
+                </div>
+                
+                <div class="relative flex items-center py-1">
+                    <div class="flex-grow border-t border-gray-200"></div>
+                    <span class="flex-shrink-0 mx-3 text-gray-400 text-xs">또는</span>
+                    <div class="flex-grow border-t border-gray-200"></div>
+                </div>
+
+                <!-- 2. 로컬 파일 직접 업로드 영역 (기존 유지, 크기 조절) -->
+                <div id="dropZone" class="rounded-lg border-2 border-dashed border-gray-300 transition-colors cursor-pointer hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center justify-center relative p-3">
+                    <input type="file" id="fileInput" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <i class="fa-solid fa-file-arrow-up text-2xl text-gray-400 mb-1"></i>
+                    <p class="text-xs font-semibold text-gray-600 text-center">
+                        <span class="text-blue-600">로컬 파일</span> 직접 드롭 / 클릭
+                    </p>
+                </div>
+                
+                <!-- 로드 상태 알림 -->
+                <div id="jsonStatus" class="flex items-center justify-center text-xs font-medium text-gray-400 mt-1">
                     <i class="fa-solid fa-circle-xmark mr-1.5"></i> 데이터 대기중
                 </div>
             </div>
@@ -49,7 +72,7 @@
             <div class="glass-panel rounded-xl shadow-sm border border-gray-200 flex flex-col flex-grow overflow-hidden relative">
                 <div id="listOverlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center text-gray-500">
                     <i class="fa-solid fa-lock text-3xl mb-2"></i>
-                    <p class="text-sm font-medium">데이터 파일을 업로드해주세요</p>
+                    <p class="text-sm font-medium">데이터를 선택하거나 업로드해주세요</p>
                 </div>
 
                 <div class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl flex flex-col gap-3">
@@ -124,12 +147,25 @@
     </main>
 
     <script>
+        // ====================================================================
+        // [사용자 설정 영역]
+        // 깃허브 레포지토리의 루트/Dist_Mat/ 폴더에 올려둔 json 파일 이름을 아래 배열에 적어주세요.
+        // ====================================================================
+        const availableServerFiles = [
+            "example_matrix_1.json",
+            "example_matrix_2.json"
+            // "진안군_메트릭스.json" 과 같이 파일명을 추가/수정 하시면 됩니다.
+        ];
+
+        // 상태 변수
         let matrixData = {};       
         let locationNames = [];    
         let selectedIndices = [];  
         let locationsMeta = {};    
         let hasJson = false;
 
+        // DOM 요소들
+        const serverFileSelect = document.getElementById('serverFileSelect');
         const fileInput = document.getElementById('fileInput');
         const dropZone = document.getElementById('dropZone');
         const jsonStatus = document.getElementById('jsonStatus');
@@ -148,62 +184,121 @@
         const clearBtn = document.getElementById('clearBtn');
         const resultContent = document.getElementById('resultContent');
 
-        function handleFile(file) {
-            if (!file.name.endsWith('.json')) return;
+        // 서버 파일 선택 드롭박스 초기화
+        function initServerFileSelect() {
+            availableServerFiles.forEach(fileName => {
+                const option = document.createElement('option');
+                option.value = fileName;
+                option.textContent = fileName;
+                serverFileSelect.appendChild(option);
+            });
+        }
+        initServerFileSelect();
+
+        // 1. 서버에서 json 파일 불러오기 (드롭박스 이벤트)
+        serverFileSelect.addEventListener('change', async (e) => {
+            const fileName = e.target.value;
+            if (!fileName) return;
+
+            try {
+                // UI 상태 변경 (로딩중)
+                jsonStatus.className = 'mt-1 flex items-center text-xs font-medium text-gray-500';
+                jsonStatus.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> 서버에서 다운로드 중...`;
+                
+                // Fetch API로 Dist_Mat 폴더 내의 json 가져오기
+                const response = await fetch(`./Dist_Mat/${fileName}`);
+                if (!response.ok) throw new Error('파일을 찾을 수 없거나 네트워크 오류입니다.');
+                
+                const jsonData = await response.json();
+                
+                // 데이터 파싱 및 UI 적용 함수 호출
+                processJsonData(jsonData, fileName);
+                
+                // 직접 업로드 input 초기화 (충돌 방지)
+                fileInput.value = '';
+
+            } catch (error) {
+                console.error("서버 데이터 로드 에러:", error);
+                jsonStatus.className = 'mt-1 flex items-center text-xs font-medium text-red-500';
+                jsonStatus.innerHTML = `<i class="fa-solid fa-circle-xmark mr-1.5"></i> 로드 실패 (파일 경로/이름 확인)`;
+                alert(`${fileName} 파일을 불러오는데 실패했습니다.\nDist_Mat 폴더에 파일이 존재하는지 확인해주세요.`);
+            }
+        });
+
+        // 2. 로컬 파일 직접 업로드 이벤트 처리 (기존 유지)
+        function handleLocalFile(file) {
+            if (!file.name.endsWith('.json')) {
+                alert('JSON 파일만 업로드 가능합니다.');
+                return;
+            }
             
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    matrixData = JSON.parse(e.target.result);
-                    locationNames = Object.keys(matrixData);
+                    const jsonData = JSON.parse(e.target.result);
+                    processJsonData(jsonData, file.name);
                     
-                    if (locationNames.length === 0) throw new Error("데이터가 비어있습니다.");
-
-                    const categories = new Set();
-                    const regions = new Set();
-                    locationsMeta = {};
-
-                    // JSON 파싱 (새로운 구조 딕셔너리형 대응)
-                    locationNames.forEach(name => {
-                        const data = matrixData[name];
-                        if (Array.isArray(data)) {
-                            // 구버전(리스트 형태) 매트릭스 처리 로직
-                            locationsMeta[name] = { category: '', region: '' };
-                        } else {
-                            // 신버전(딕셔너리 통합 형태) 매트릭스 처리 로직
-                            locationsMeta[name] = { category: data.category || '', region: data.region || '' };
-                            if (data.category) categories.add(data.category);
-                            if (data.region) regions.add(data.region);
-                        }
-                    });
-
-                    populateDropdown(categoryFilter, categories, '모든 구분');
-                    populateDropdown(regionFilter, regions, '모든 읍/면');
-                    
-                    categoryFilter.disabled = false;
-                    regionFilter.disabled = false;
-
-                    hasJson = true;
-                    jsonStatus.className = 'mt-2 flex items-center text-xs font-bold text-blue-600';
-                    jsonStatus.innerHTML = `<i class="fa-solid fa-check-circle mr-1.5"></i> 데이터 통합 로드 완료 (${locationNames.length}개)`;
-                    
-                    listOverlay.classList.add('hidden');
-                    
-                    selectedIndices = [];
-                    if (locationNames[0] && locationNames[0].includes("군청")) {
-                        selectedIndices.push(0);
-                    }
-                    
-                    renderSourceList();
-                    renderTargetList();
+                    // 드롭박스 선택 초기화
+                    serverFileSelect.value = "";
                 } catch (error) {
                     console.error(error);
-                    alert('JSON 파일을 읽는 중 오류가 발생했습니다. 올바른 형식인지 확인하세요.');
+                    alert('JSON 파일을 파싱하는 중 오류가 발생했습니다. 올바른 형식인지 확인하세요.');
                 }
             };
             reader.readAsText(file);
         }
 
+        // 공통 로직: 파싱된 JSON 데이터를 시스템에 적용하는 함수
+        function processJsonData(data, sourceName = "") {
+            matrixData = data;
+            locationNames = Object.keys(matrixData);
+            
+            if (locationNames.length === 0) throw new Error("데이터가 비어있습니다.");
+
+            const categories = new Set();
+            const regions = new Set();
+            locationsMeta = {};
+
+            // JSON 파싱 (새로운 구조 딕셔너리형 대응)
+            locationNames.forEach(name => {
+                const itemData = matrixData[name];
+                if (Array.isArray(itemData)) {
+                    locationsMeta[name] = { category: '', region: '' };
+                } else {
+                    locationsMeta[name] = { category: itemData.category || '', region: itemData.region || '' };
+                    if (itemData.category) categories.add(itemData.category);
+                    if (itemData.region) regions.add(itemData.region);
+                }
+            });
+
+            populateDropdown(categoryFilter, categories, '모든 구분');
+            populateDropdown(regionFilter, regions, '모든 읍/면');
+            
+            categoryFilter.disabled = false;
+            regionFilter.disabled = false;
+
+            hasJson = true;
+            
+            // UI 알림 업데이트
+            jsonStatus.className = 'mt-1 flex items-center text-xs font-bold text-blue-600';
+            let msg = `데이터 준비 완료 (${locationNames.length}개)`;
+            if (sourceName) msg += `<span class="ml-1 text-gray-500 font-normal truncate max-w-[150px]"> - ${sourceName}</span>`;
+            jsonStatus.innerHTML = `<i class="fa-solid fa-check-circle mr-1.5"></i> ${msg}`;
+            
+            listOverlay.classList.add('hidden');
+            
+            selectedIndices = [];
+            // 기본값 설정: '군청'이라는 단어가 포함된 장소를 시작점으로
+            if (locationNames[0] && locationNames[0].includes("군청")) {
+                selectedIndices.push(0);
+            }
+            
+            renderSourceList();
+            renderTargetList();
+            resetResultView();
+        }
+
+        // 드롭다운 채우기 함수
         function populateDropdown(selectElement, itemsSet, defaultText) {
             selectElement.innerHTML = `<option value="">${defaultText}</option>`;
             Array.from(itemsSet).sort().forEach(item => {
@@ -216,19 +311,22 @@
             });
         }
 
-        fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleFile(e.target.files[0]) });
+        // 파일 드래그 앤 드롭 및 클릭 이벤트 리스너
+        fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleLocalFile(e.target.files[0]) });
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500', 'bg-blue-50'); });
         dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-blue-500', 'bg-blue-50'); });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('border-blue-500', 'bg-blue-50');
-            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files.length) handleLocalFile(e.dataTransfer.files[0]);
         });
 
+        // 검색 및 필터 이벤트
         searchInput.addEventListener('input', renderSourceList);
         categoryFilter.addEventListener('change', renderSourceList);
         regionFilter.addEventListener('change', renderSourceList);
 
+        // 왼쪽 패널 리스트 렌더링
         function renderSourceList() {
             if (!hasJson) return;
             sourceList.innerHTML = '';
@@ -273,6 +371,7 @@
             totalCountSpan.textContent = visibleCount;
         }
 
+        // 오른쪽 상단 패널: 선택된 목적지 렌더링
         function renderTargetList() {
             targetList.innerHTML = '';
             const rawTotalInfo = document.getElementById('rawTotalInfo');
@@ -336,6 +435,7 @@
             }
         }
 
+        // 목적지 추가/제거
         window.addLocation = function(index) {
             if (!selectedIndices.includes(index)) {
                 selectedIndices.push(index);
@@ -368,18 +468,18 @@
             resultContent.classList.add('items-center', 'justify-center');
         }
 
-        // 거리 가져오는 로직 (신버전 딕셔너리형 대응)
+        // 두 지점 간 거리 반환
         function getDistance(fromIdx, toIdx) {
             const fromName = locationNames[fromIdx];
             const data = matrixData[fromName];
             if (!data) return 999999;
             
-            // 기존 단순 배열 구조와 새로운 딕셔너리(distances 배열 포함) 구조 모두 호환
             const distArray = Array.isArray(data) ? data : data.distances;
             if (!distArray || distArray[toIdx] === undefined) return 999999;
             return distArray[toIdx];
         }
 
+        // 총 이동거리 연산
         function calculateTotalDistance(routeArray) {
             let total = 0;
             for (let i = 0; i < routeArray.length - 1; i++) {
@@ -388,6 +488,7 @@
             return total;
         }
 
+        // 최적화 연산 메인 로직 (Nearest Neighbor + 2Opt)
         function calculateShortestPath() {
             if (selectedIndices.length < 2) return;
 
@@ -402,6 +503,7 @@
                 let currentRoute = [startNode];
                 let current_node = startNode;
 
+                // 1. Nearest Neighbor
                 while (unvisited.length > 0) {
                     let nearest_idx = 0;
                     let min_dist = Infinity;
@@ -419,12 +521,14 @@
                     unvisited.splice(nearest_idx, 1);
                 }
                 
+                // 마지막으로 출발지 복귀
                 currentRoute.push(startNode);
 
                 let improved = true;
                 let bestRoute = [...currentRoute];
                 let bestDistance = calculateTotalDistance(bestRoute);
 
+                // 2. 2-Opt Algorithm
                 while (improved) {
                     improved = false;
                     for (let i = 1; i < bestRoute.length - 2; i++) {
@@ -460,6 +564,7 @@
             return `${(meters / 1000).toFixed(1)}km`;
         }
 
+        // 결과 UI 렌더링
         function displayResult(route, totalDist) {
             resultContent.classList.remove('items-center', 'justify-center');
             resultContent.innerHTML = '';
